@@ -1,25 +1,27 @@
-# syntax docker/dockerfile:1
-
-FROM node:16.6
+# Stage 1: Build the application
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-RUN mkdir -p /app/data
+# Install only production dependencies to keep the final image small
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-COPY ["package.json", "./"]
+# Copy all JavaScript files from the root directory.
+# This ensures that the db.json file is not baked into the image.
+COPY src/ ./
 
-RUN npm install
+# Stage 2: Create the final, minimal image
+FROM node:24-alpine
 
-COPY ./src .
+WORKDIR /app
 
-ARG DB_NAME
-ARG DB_USER
-ARG DB_PASSWORD
-
-ENV DB_NAME $DB_NAME
-ENV DB_USER $DB_USER
-ENV DB_PASSWORD $DB_PASSWORD
+# Only copy the essential production files from the builder stage.
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/routers ./routers
+COPY --from=builder /app/helpers ./helpers
+COPY --from=builder /app/index.js ./
 
 EXPOSE 6080
 
-CMD [ "node", "index.js" ]
+CMD ["node", "index.js"]
